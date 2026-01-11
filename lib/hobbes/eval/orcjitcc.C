@@ -13,7 +13,11 @@
 #include <llvm/Support/AllocatorBase.h>
 #include <llvm/Support/Compiler.h>
 #include <llvm/Support/Error.h>
+#if LLVM_VERSION_MAJOR < 18
 #include <llvm/Support/Host.h>
+#else
+#include <llvm/ExecutionEngine/Orc/Shared/ExecutorSymbolDef.h>
+#endif
 #include <llvm/Support/Process.h>
 
 namespace {
@@ -23,7 +27,11 @@ optimizeModule(llvm::orc::ThreadSafeModule tsm,
   tsm.withModuleDo([](llvm::Module &m) {
     auto fpm = llvm::legacy::FunctionPassManager(&m);
     fpm.add(llvm::createReassociatePass());
+#if LLVM_VERSION_MAJOR < 18
     fpm.add(llvm::createNewGVNPass());
+#else
+    // fpm.add(llvm::createGVNPass());
+#endif
     fpm.add(llvm::createCFGSimplificationPass());
     fpm.add(llvm::createTailCallEliminationPass());
     fpm.doInitialization();
@@ -96,6 +104,7 @@ llvm::Expected<llvm::orc::ExecutorAddr> ORCJIT::lookup(llvm::StringRef name) {
   return jit->lookup(name);
 }
 
+#if LLVM_VERSION_MAJOR < 18
 llvm::Error ORCJIT::addExternalCallableSymbol(llvm::StringRef name, void *ptr) {
   return jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(
       {{(*mangle)(name), llvm::JITEvaluatedSymbol::fromPointer(
@@ -108,5 +117,20 @@ llvm::Error ORCJIT::addExternalNonCallableSymbol(llvm::StringRef name,
   return jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(
       {{(*mangle)(name), llvm::JITEvaluatedSymbol::fromPointer(ptr)}}));
 }
+#else
+llvm::Error ORCJIT::addExternalCallableSymbol(llvm::StringRef name, void *ptr) {
+  return jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(
+      {{(*mangle)(name), llvm::orc::ExecutorSymbolDef{
+                             llvm::orc::ExecutorAddr::fromPtr(ptr),
+                             llvm::JITSymbolFlags::Exported |
+                                      llvm::JITSymbolFlags::Callable}}}));
+}
+
+llvm::Error ORCJIT::addExternalNonCallableSymbol(llvm::StringRef name,
+                                                 void *ptr) {
+  return jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(
+      {{(*mangle)(name), llvm::orc::ExecutorSymbolDef{llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::None}}}));
+}
+#endif
 } // namespace hobbes
 #endif

@@ -195,16 +195,16 @@ public:
 
       withContext([&](auto&) {
         // store the array length
-        llvm::Value* alenp = structOffset(builder(), p, 0);
+        llvm::Value* alenp = structOffset(builder(), llvmVarArrType(elemTy), p, 0);
         builder()->CreateStore(llvm::Constant::getIntegerValue(longType(), llvm::APInt(64, vs.size(), true)), alenp);
 
         // store the array contents
         if (!isUnit(aty->type())) {
-          llvm::Value* adatap = structOffset(builder(), p, 1);
+          llvm::Value* adatap = structOffset(builder(), llvmVarArrType(elemTy), p, 1);
 
           for (size_t i = 0; i < vs.size(); ++i) {
             llvm::Value* ev = vs[i];
-            llvm::Value* ap = offset(builder(), adatap, 0, i);
+            llvm::Value* ap = offset(builder(), elemTy, adatap, 0, i);
 
             // we only memcopy into an array if the data is large and isn't an opaque pointer (always write opaque pointers as pointers)
             if (!isStoredPtr && isLargeType(aty->type())) {
@@ -245,7 +245,7 @@ public:
 
       // store the variant value
       MonoTypePtr  valty = requireMonotype(v->value()->type());
-      llvm::Value* pp    = offset(builder(), p, vty->payloadOffset());
+      llvm::Value* pp    = offset(builder(), byteType(), p, vty->payloadOffset());
 
       if (isLargeType(valty)) {
         memCopy(builder(), pp, 8, tv, 8, sizeOf(valty));
@@ -280,7 +280,7 @@ public:
 
       for (const auto &v : vs) {
         llvm::Value* fv  = v.second;
-        llvm::Value* fp  = structFieldPtr(p, rty->alignedIndex(v.first));
+        llvm::Value* fp  = structFieldPtr(toLLVM(mrty), p, rty->alignedIndex(v.first));
         MonoTypePtr  fty = rty->member(v.first);
 
         withContext([&](auto&) {
@@ -305,8 +305,8 @@ public:
     }
 
     return withContext([&](auto&) -> llvm::Value* {
-      llvm::Value* ard = structOffset(builder(), ar, 1); // get the array's data pointer
-      llvm::Value* p   = offset(builder(), ard, 0, ir);  // and index into it
+      llvm::Value* ard = structOffset(builder(), toLLVM(aity), ar, 1); // get the array's data pointer
+      llvm::Value* p   = offset(builder(), nullptr, ard, 0, ir);  // and index into it
 
       if (isLargeType(aity)) {
         return p;
@@ -314,7 +314,7 @@ public:
 #if LLVM_VERSION_MAJOR < 16
         return builder()->CreateLoad(p, false);
 #else
-        return builder()->CreateLoad(p->getType()->getPointerElementType(), p, false);
+        return builder()->CreateLoad(nullptr, p, false);
 #endif
       }
     });
@@ -348,7 +348,7 @@ public:
 #if LLVM_VERSION_MAJOR < 16
     llvm::Value* tag  = withContext([this, ptag](auto&) { return builder()->CreateLoad(ptag, false); });
 #else
-    llvm::Value* tag  = withContext([this, ptag](auto&) { return builder()->CreateLoad(ptag->getType()->getPointerElementType(), ptag, false); });
+    llvm::Value* tag  = withContext([this, ptag](auto&) { return builder()->CreateLoad(intType(), ptag, false); });
 #endif
 
     std::vector<llvm::Value*> idxs;
@@ -357,7 +357,7 @@ public:
 #if LLVM_VERSION_MAJOR < 16
     llvm::Value* pval = withContext([&, this](auto&) { return builder()->CreateGEP(var, idxs); });
 #else
-    llvm::Value* pval = withContext([&, this](auto&) { return builder()->CreateGEP(var->getType()->getPointerElementType(), var, idxs); });
+    llvm::Value* pval = withContext([&, this](auto&) { return builder()->CreateGEP(toLLVM(vty, false), var, idxs); });
 #endif
 
     llvm::Function*   thisFn     = withContext([this](auto&) { return builder()->GetInsertBlock()->getParent(); });
@@ -394,7 +394,7 @@ public:
 #if LLVM_VERSION_MAJOR < 16
             llvm::Value* val      = isLargeType(valty) ? pointval : builder()->CreateLoad(pointval, false);
 #else
-            llvm::Value* val      = isLargeType(valty) ? pointval : builder()->CreateLoad(pointval->getType()->getPointerElementType(), pointval, false);
+            llvm::Value* val      = isLargeType(valty) ? pointval : builder()->CreateLoad(lty, pointval, false);
 #endif
 
             beginScope(b.vname, val);
@@ -521,7 +521,7 @@ public:
     }
 
     // switched to using packed records and manually-determined padding
-    llvm::Value* rp = structFieldPtr(rec, rty->alignedIndex(v->field()));
+    llvm::Value* rp = structFieldPtr(toLLVM(fty), rec, rty->alignedIndex(v->field()));
 
     return withContext([&](auto&) -> llvm::Value* {
       if (auto* op = is<OpaquePtr>(fty)) {
@@ -531,7 +531,7 @@ public:
 #if LLVM_VERSION_MAJOR < 16
           return builder()->CreateLoad(rp, false);
 #else
-          return builder()->CreateLoad(rp->getType()->getPointerElementType(), rp, false);
+          return builder()->CreateLoad(nullptr, rp, false);
 #endif
         }
       } else if (isLargeType(fty)) {
@@ -540,7 +540,7 @@ public:
 #if LLVM_VERSION_MAJOR < 16
         return builder()->CreateLoad(rp, false);
 #else
-        return builder()->CreateLoad(rp->getType()->getPointerElementType(), rp, false);
+        return builder()->CreateLoad(nullptr, rp, false);
 #endif
       }
     });
@@ -620,8 +620,8 @@ private:
     this->c->popScope();
   }
 
-  llvm::Value* structFieldPtr(llvm::Value* r, unsigned int i) const {
-    return withContext([=](auto&) { return structOffset(builder(), r, i); });
+  llvm::Value* structFieldPtr(llvm::Type* t, llvm::Value* r, unsigned int i) const {
+    return withContext([=](auto&) { return structOffset(builder(), t, r, i); });
   }
 
   RecordValue compileRecordFields(const MkRecord::FieldDefs& fs) const {
@@ -653,18 +653,21 @@ private:
 #if LLVM_VERSION_MAJOR < 16
       return withContext([&](auto&) { return isLargeType(vty) ? builder()->CreateLoad(vl) : vl; });
 #else
-      return withContext([&](auto&) { return isLargeType(vty) ? builder()->CreateLoad(vl->getType()->getPointerElementType(), vl) : vl; });
+      return withContext([&](auto&) { return isLargeType(vty) ? builder()->CreateLoad(nullptr, vl) : vl; });
 #endif
     } else if (const AIndex* ai = is<AIndex>(e)) {
       MonoTypePtr  aity = requireMonotype(ai->type());
+      llvm::Type* elemTy = toLLVM(aity, false);
       llvm::Value* ar   = compile(ai->array());
       llvm::Value* ir   = compile(ai->index());
+      llvm::StructType* aty = varArrayType(elemTy);
 
-      llvm::Value* ard = withContext([this, ar](auto&) {
-        return structOffset(builder(), ar, 1); // get the array's 'data' pointer
+
+      llvm::Value* ard = withContext([this, ar, aty](auto&) {
+        return structOffset(builder(), aty, ar, 1); // get the array's 'data' pointer
       });
       llvm::Value* p   = withContext([&](auto&) {
-        return offset(builder(), ard, 0, ir);  // and index into it
+        return offset(builder(), elemTy, ard, 0, ir); 
       });
 
       return p;
@@ -678,7 +681,7 @@ private:
       MonoTypePtr  fty  = requireMonotype(rp->type());
 
       // switched to using packed records and manually-determined padding
-      llvm::Value* p = structFieldPtr(rec, rty->alignedIndex(rp->field()));
+      llvm::Value* p = structFieldPtr(toLLVM(fty), rec, rty->alignedIndex(rp->field()));
 
       if (auto* op = is<OpaquePtr>(fty)) {
         if (op->storedContiguously()) {
@@ -696,7 +699,7 @@ private:
           llvm::Value* ar = compile(ap->args()[0]);
           llvm::Value* i  = compile(ap->args()[1]);
 
-          return withContext([&](auto&) { return offset(builder(), ar, 0, i); });
+          return withContext([&](auto&) { return offset(builder(), nullptr, ar, 0, i); });
         }
       }
     }

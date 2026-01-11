@@ -194,13 +194,14 @@ class dbloadVF : public op {
       llvm::Value* allocv = fncall(c->builder(), f, f->getFunctionType(), list<llvm::Value*>(db, off));
 
       if (hasPointerRep(rty)) {
+        //@todo: verify if the bit cast is necessary
         return c->builder()->CreateBitCast(allocv, toLLVM(rty, true));
       } else {
 #if LLVM_VERSION_MAJOR < 16
         return c->builder()->CreateLoad(c->builder()->CreateBitCast(allocv, ptrType(toLLVM(rty, true))));
 #else
-        llvm::Value* cast = c->builder()->CreateBitCast(allocv, ptrType(toLLVM(rty, true)));
-        return c->builder()->CreateLoad(cast->getType()->getPointerElementType(), cast);
+        // llvm::Value* cast = c->builder()->CreateBitCast(allocv, ptrType(toLLVM(rty, true)));
+        return c->builder()->CreateLoad(toLLVM(rty, true), allocv);
 #endif
       }
     });
@@ -294,8 +295,8 @@ struct dbloadF : public op {
 #if LLVM_VERSION_MAJOR < 16
           return c->builder()->CreateLoad(c->builder()->CreateBitCast(allocv, ptrType(toLLVM(rty, true))));
 #else
-          llvm::Value* cast = c->builder()->CreateBitCast(allocv, ptrType(toLLVM(rty, true)));
-          return c->builder()->CreateLoad(cast->getType()->getPointerElementType(), cast);
+          // llvm::Value* cast = c->builder()->CreateBitCast(allocv, ptrType(toLLVM(rty, true)));
+          return c->builder()->CreateLoad(toLLVM(rty, true), allocv);
 #endif
         }
       }
@@ -344,8 +345,8 @@ struct dbloadPF : public op {
 #if LLVM_VERSION_MAJOR < 16
           return c->builder()->CreateLoad(c->builder()->CreateBitCast(allocv, ptrType(toLLVM(rty, true))));
 #else
-          llvm::Value* cast = c->builder()->CreateBitCast(allocv, ptrType(toLLVM(rty, true)));
-          return c->builder()->CreateLoad(cast->getType()->getPointerElementType(), cast);
+          // llvm::Value* cast = c->builder()->CreateBitCast(allocv, ptrType(toLLVM(rty, true)));
+          return c->builder()->CreateLoad(toLLVM(rty, true), allocv);
 #endif
         }
       }

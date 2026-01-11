@@ -4,7 +4,10 @@
 #include <llvm/Config/llvm-config.h>
 
 #if LLVM_VERSION_MAJOR >= 11
+#if LLVM_VERSION_MAJOR < 18
+//@todo: remove this header
 #include <llvm/ADT/Optional.h>
+#endif
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #if LLVM_VERSION_MAJOR >= 16

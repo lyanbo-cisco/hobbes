@@ -18,7 +18,9 @@
     LLVM_VERSION_MAJOR != 10 && \
     LLVM_VERSION_MAJOR != 11 && \
     LLVM_VERSION_MAJOR != 12 && \
-    LLVM_VERSION_MAJOR != 16
+    LLVM_VERSION_MAJOR != 16 && \
+    LLVM_VERSION_MAJOR != 18 && \
+    LLVM_VERSION_MAJOR != 21
 #error "I don't know how to use this version of LLVM"
 #endif
 
@@ -46,14 +48,16 @@
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Utils/Cloning.h>
+#if LLVM_VERSION_MAJOR < 18
 #include <llvm/Transforms/Vectorize.h>
+#endif
 #if LLVM_VERSION_MAJOR == 4 || LLVM_VERSION_MAJOR == 6 || LLVM_VERSION_MAJOR <= 8
 #  include <llvm/Bitcode/BitstreamReader.h>
 #  include <llvm/Bitcode/BitstreamWriter.h>
 #elif  LLVM_VERSION_MAJOR <= 16
 #  include <llvm/Bitstream/BitstreamReader.h>
 #  include <llvm/Bitstream/BitstreamWriter.h>
-#else
+#elif LLVM_VERSION_MAJOR < 18
 #  include <llvm/Bitcode/ReaderWriter.h>
 #endif
 
@@ -721,21 +725,21 @@ inline llvm::Value* tryMkConstRecord(llvm::IRBuilder<>*, llvm::Module* m, const 
 }
 
 // pointer / GEP utilities
-inline llvm::Value* offset(llvm::IRBuilder<>* b, llvm::Value* p, llvm::Value* o0) {
+inline llvm::Value* offset(llvm::IRBuilder<>* b, llvm::Type* t, llvm::Value* p, llvm::Value* o0) {
   std::vector<llvm::Value*> idxs;
   idxs.push_back(o0);
 #if LLVM_VERSION_MAJOR < 16
   return b->CreateGEP(p, idxs);
 #else
-  return b->CreateGEP(p->getType()->getPointerElementType(), p, idxs);
+  return b->CreateGEP(t, p, idxs);
 #endif
 }
 
-inline llvm::Value* offset(llvm::IRBuilder<>* b, llvm::Value* p, int o0) {
-  return offset(b, p, cvalue(o0));
+inline llvm::Value* offset(llvm::IRBuilder<>* b, llvm::Type* t, llvm::Value* p, int o0) {
+  return offset(b, t, p, cvalue(o0));
 }
 
-inline llvm::Value* offset(llvm::IRBuilder<>* b, llvm::Value* p, int o0, int o1) {
+inline llvm::Value* offset(llvm::IRBuilder<>* b, llvm::Type* t, llvm::Value* p, int o0, int o1) {
   std::vector<llvm::Value*> idxs;
   idxs.push_back(cvalue(o0));
   idxs.push_back(cvalue(o1));
@@ -743,22 +747,22 @@ inline llvm::Value* offset(llvm::IRBuilder<>* b, llvm::Value* p, int o0, int o1)
 #if LLVM_VERSION_MAJOR < 16
   return b->CreateGEP(p, idxs);
 #else
-  return b->CreateGEP(p->getType()->getPointerElementType(), p, idxs);
+  return b->CreateGEP(t, p, idxs);
 #endif
 }
 
-inline llvm::Value* offset(llvm::IRBuilder<>* b, llvm::Value* p, int o0, llvm::Value* o1) {
+inline llvm::Value* offset(llvm::IRBuilder<>* b, llvm::Type* t, llvm::Value* p, int o0, llvm::Value* o1) {
   std::vector<llvm::Value*> idxs;
   idxs.push_back(cvalue(o0));
   idxs.push_back(o1);
 #if LLVM_VERSION_MAJOR < 16
   return b->CreateGEP(p, idxs);
 #else
-  return b->CreateGEP(p->getType()->getPointerElementType(), p, idxs);
+  return b->CreateGEP(t, p, idxs);
 #endif
 }
 
-inline llvm::Value* structOffset(llvm::IRBuilder<>* b, llvm::Value* p, unsigned int fieldOffset) {
+inline llvm::Value* structOffset(llvm::IRBuilder<>* b, llvm::Type* t, llvm::Value* p, unsigned int fieldOffset) {
 #if LLVM_VERSION_MINOR == 7
   // don't pass nullptr? (http://reviews.llvm.org/rL233938)
   return b->CreateStructGEP(nullptr, p, fieldOffset);
@@ -767,7 +771,7 @@ inline llvm::Value* structOffset(llvm::IRBuilder<>* b, llvm::Value* p, unsigned 
 #elif LLVM_VERSION_MAJOR < 16
   return b->CreateStructGEP(p, fieldOffset);
 #else
-  return b->CreateStructGEP(p->getType()->getPointerElementType(), p, fieldOffset);
+  return b->CreateStructGEP(t, p, fieldOffset);
 #endif
 }
 
@@ -927,10 +931,13 @@ inline void maybeInlineFunctionsIn(llvm::Module& m) {
   };
 
   if (allFunctionsAreSmall(m)) {
+#if LLVM_VERSION_MAJOR < 18
     auto mpm = llvm::legacy::PassManager();
     mpm.add(llvm::createFunctionInliningPass());
     mpm.run(m);
+#endif
   }
+
 }
 }
 #endif

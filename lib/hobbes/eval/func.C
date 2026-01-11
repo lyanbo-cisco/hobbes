@@ -298,8 +298,9 @@ public:
 #if LLVM_VERSION_MAJOR < 16
       return c->builder()->CreateLoad(structOffset(c->builder(), c->compile(es[0]), 0), false, "at");
 #else
-      llvm::Value* v = structOffset(c->builder(), c->compile(es[0]), 0);
-      return c->builder()->CreateLoad(v->getType()->getPointerElementType(), v, false, "at");
+      llvm::Value* v = c->compile(es[0]);
+      llvm::Value* v0 = structOffset(c->builder(), nullptr, v, 0);
+      return c->builder()->CreateLoad(nullptr, v0, false, "at");
 #endif
     });
   }
@@ -324,35 +325,35 @@ public:
 
     return withContext([&](auto&) {
       llvm::Value* a0 = c->compile(es[0]);
-      llvm::Value* a00 = structOffset(c->builder(), a0, 0);
+      llvm::Value* a00 = structOffset(c->builder(), nullptr, a0, 0);
 #if LLVM_VERSION_MAJOR < 16
       llvm::Value* c0 = c->builder()->CreateLoad(a00);
 #else
-      llvm::Value* c0 = c->builder()->CreateLoad(a00->getType()->getPointerElementType(), a00);
+      llvm::Value* c0 = c->builder()->CreateLoad(nullptr, a00);
 #endif
-      llvm::Value* d0 = structOffset(c->builder(), a0, 1);
+      llvm::Value* d0 = structOffset(c->builder(), nullptr, a0, 1);
       llvm::Value* a1 = c->compile(es[1]);
-      llvm::Value* a10 = structOffset(c->builder(), a1, 0);
+      llvm::Value* a10 = structOffset(c->builder(), nullptr, a1, 0);
 #if LLVM_VERSION_MAJOR < 16
       llvm::Value* c1 = c->builder()->CreateLoad(a10);
 #else
-      llvm::Value* c1 = c->builder()->CreateLoad(a10->getType()->getPointerElementType(), a10);
+      llvm::Value* c1 = c->builder()->CreateLoad(nullptr, a10);
 #endif
-      llvm::Value* d1 = structOffset(c->builder(), a1, 1);
+      llvm::Value* d1 = structOffset(c->builder(), nullptr, a1, 1);
 
       llvm::Value* aclen = c->builder()->CreateAdd(c0, c1);
       llvm::Value* mlen  = c->builder()->CreateAdd(cvalue(static_cast<long>(sizeof(long))), c->builder()->CreateMul(aclen, cvalue(static_cast<long>(sizeOf(aty->type())))));
 
       llvm::Value* cmdata = c->compileAllocStmt(mlen, cvalue(std::max<long>(sizeof(long), alignment(aty->type()))), toLLVM(tys[0]));
-      c->builder()->CreateStore(aclen, structOffset(c->builder(), cmdata, 0));
+      c->builder()->CreateStore(aclen, structOffset(c->builder(), nullptr, cmdata, 0));
 
       if (!isUnit(aty->type())) {
         // hack to acknowledge the fact that opaque pointers are stored as pointers within arrays
         long elemSize = is<OpaquePtr>(aty->type()) ? sizeof(void*) : static_cast<long>(sizeOf(aty->type()));
 
-        llvm::Value* od = structOffset(c->builder(), cmdata, 1);
-        memCopy(c->builder(), offset(c->builder(), od, 0), 8, d0, 8, c->builder()->CreateMul(c0, cvalue(elemSize)));
-        memCopy(c->builder(), offset(c->builder(), od, c0), 8, d1, 8, c->builder()->CreateMul(c1, cvalue(elemSize)));
+        llvm::Value* od = structOffset(c->builder(), nullptr, cmdata, 1);
+        memCopy(c->builder(), offset(c->builder(), nullptr, od, 0), 8, d0, 8, c->builder()->CreateMul(c0, cvalue(elemSize)));
+        memCopy(c->builder(), offset(c->builder(), nullptr, od, c0), 8, d1, 8, c->builder()->CreateMul(c1, cvalue(elemSize)));
       }
       return cmdata;
     });
@@ -377,7 +378,7 @@ class asetlen : public op {
 
     llvm::Value* av = c->compile(es[0]);
     llvm::Value* nc = c->compile(es[1]);
-    withContext([&](auto&) { c->builder()->CreateStore(nc, structOffset(c->builder(), av, 0)); });
+    withContext([&](auto&) { c->builder()->CreateStore(nc, structOffset(c->builder(), nullptr, av, 0)); });
     return cvalue(true);
   }
 
@@ -418,7 +419,7 @@ class saelem : public op {
     }
 
     return withContext([&](auto&) -> llvm::Value* {
-      llvm::Value* p = offset(c->builder(), c->compile(es[0]), 0, c->compile(es[1]));
+      llvm::Value* p = offset(c->builder(), nullptr, c->compile(es[0]), 0, c->compile(es[1]));
 
       if (isLargeType(rty)) {
         return p;
@@ -426,7 +427,7 @@ class saelem : public op {
 #if LLVM_VERSION_MAJOR < 16
         return c->builder()->CreateLoad(p, false);
 #else
-        return c->builder()->CreateLoad(p->getType()->getPointerElementType(), p, false);
+        return c->builder()->CreateLoad(nullptr, p, false);
 #endif
       }
     });
@@ -451,7 +452,7 @@ class saacopy : public op {
 
     llvm::Value* varr = c->compile(es[1]);
     withContext([&](auto&) {
-      llvm::Value* vard = structOffset(c->builder(), varr, 1); // get the var-length array's 'data' pointer
+      llvm::Value* vard = structOffset(c->builder(), nullptr, varr, 1); // get the var-length array's 'data' pointer
 
       llvm::Value* len  = c->compile(es[2]);
       llvm::Value* lenb = c->builder()->CreateMul(len, cvalue(static_cast<long>(sizeOf(aty->type()))));
@@ -565,7 +566,7 @@ public:
         return c->builder()->CreateLoad(c->compileAllocStmt(sizeOf(rty), alignment(rty), ptrType(toLLVM(rty, true)), this->zeroMem));
 #else
         llvm::Value* tmp = c->compileAllocStmt(sizeOf(rty), alignment(rty), ptrType(toLLVM(rty, true)), this->zeroMem);
-        return c->builder()->CreateLoad(tmp->getType()->getPointerElementType(), tmp);
+        return c->builder()->CreateLoad(nullptr, tmp);
 #endif
       });
     } else {
@@ -595,7 +596,7 @@ public:
       return c->builder()->CreateAdd(cvalue(static_cast<long>(sizeof(long))), c->builder()->CreateMul(aclen, cvalue(static_cast<long>(sizeOf(aty->type())))));
     });
     llvm::Value* cmdata = c->compileAllocStmt(mlen, cvalue(std::max<long>(sizeof(long), alignment(aty->type()))), toLLVM(rty));
-    withContext([&](auto&) { c->builder()->CreateStore(aclen, structOffset(c->builder(), cmdata, 0)); });
+    withContext([&](auto&) { c->builder()->CreateStore(aclen, structOffset(c->builder(), nullptr, cmdata, 0)); });
 
     return cmdata;
   }
@@ -618,7 +619,7 @@ public:
 #if LLVM_VERSION_MAJOR < 16
       return c->builder()->CreateGEP(p, o);
 #else
-      return c->builder()->CreateGEP(p->getType()->getPointerElementType(), p, o);
+      return c->builder()->CreateGEP(nullptr, p, o);
 #endif
     });
   }
@@ -643,18 +644,18 @@ public:
 
     llvm::Value* v1 = c->builder()->CreateBitCast(p, tppchar, "c");
     llvm::Value* v2 = c->builder()->CreateLoad(
-              v1->getType()->getPointerElementType(), v1
+              nullptr, v1
             );
-    llvm::Value* v3 = c->builder()->CreateGEP(v2->getType()->getPointerElementType(),
+    llvm::Value* v3 = c->builder()->CreateGEP(nullptr,
             v2,
             o
           );
     llvm::Value* v4 = c->builder()->CreateLoad(
-          v3->getType()->getPointerElementType(), v3
+          nullptr, v3
         );
     return withContext([&](auto&) {
       return c->builder()->CreateGEP(
-        p->getType()->getPointerElementType(),
+        nullptr,
         p,
         v4
       );
@@ -837,7 +838,7 @@ public:
         return c->builder()->CreateLoad(c->builder()->CreateBitCast(pval, llvm::PointerType::getUnqual(toLLVM(mty, true))), false);
 #else
         llvm::Value* tmp = c->builder()->CreateBitCast(pval, llvm::PointerType::getUnqual(toLLVM(mty, true)));
-        return c->builder()->CreateLoad(tmp->getType()->getPointerElementType(), tmp, false);
+        return c->builder()->CreateLoad(nullptr, tmp, false);
 #endif
       }
     });
@@ -872,7 +873,7 @@ public:
 #if LLVM_VERSION_MAJOR < 16
         llvm::Value* pval = c->builder()->CreateGEP(var, idxs);
 #else
-        llvm::Value* pval = c->builder()->CreateGEP(var->getType()->getPointerElementType(), var, idxs);
+        llvm::Value* pval = c->builder()->CreateGEP(nullptr, var, idxs);
 #endif
         // invoke the head case function with the payload value
         return callWith(c, es[1], vheadm.type, payloadValue(c, vheadm.type, pval));
@@ -882,7 +883,7 @@ public:
 #if LLVM_VERSION_MAJOR < 16
         llvm::Value* tag  = c->builder()->CreateLoad(ptag, false);
 #else
-        llvm::Value* tag  = c->builder()->CreateLoad(ptag->getType()->getPointerElementType(), ptag, false);
+        llvm::Value* tag  = c->builder()->CreateLoad(nullptr, ptag, false);
 #endif
 
         // compare the tag data to the head tag id
@@ -896,7 +897,7 @@ public:
 #if LLVM_VERSION_MAJOR < 16
         llvm::Value* pval = c->builder()->CreateGEP(var, idxs);
 #else
-        llvm::Value* pval = c->builder()->CreateGEP(var->getType()->getPointerElementType(), var, idxs);
+        llvm::Value* pval = c->builder()->CreateGEP(nullptr, var, idxs);
 #endif
 
         // either invoke the head case function, or the tail case function
@@ -1148,8 +1149,8 @@ class cptrrefbyF : public op {
       return c->builder()->CreateLoad(
           offset(c->builder(), c->compile(es[0]), c->compile(es[1])), false);
 #else
-      llvm::Value* tmp = offset(c->builder(), c->compile(es[0]), c->compile(es[1]));
-      return c->builder()->CreateLoad(tmp->getType()->getPointerElementType(), tmp, false);
+      llvm::Value* tmp = offset(c->builder(), nullptr, c->compile(es[0]), c->compile(es[1]));
+      return c->builder()->CreateLoad(nullptr, tmp, false);
 #endif
     });
   }
